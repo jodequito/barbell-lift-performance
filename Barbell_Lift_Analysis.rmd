@@ -1,0 +1,112 @@
+---
+title: "barbell lift performance analysis & prediction based on accelerometer data"
+author: "Johannes"
+date: "27 7 2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+This analysis shall develop a prediction algorithm that predicts the performance of barbell lifts. 
+it follows the following steps:
+1. getting and cleaning data 
+2. exploratory data analysis
+3. predictor- and model selection
+4. model optimization and prediction
+
+
+## 1. getting and cleaning data
+```{r get data}
+wbdat <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv")
+wbval <- read.csv("https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv")
+```
+The data contains data from 3 accelerometers:
+1. belt
+2. arm
+3. forearm
+for severeal persons "User_name"
+The class variable indicates the performance of the barbell lift. 
+
+We can clean the data by taking converting the class variable to a factor and removing the NA data which is in the columns of the variance.  
+```{r clean data}
+wbdat$classe <- as.factor(wbdat$classe)
+wbdat$user_name <- as.factor(wbdat$user_name)
+wbval$user_name <- as.factor(wbval$user_name)
+
+ixAcc <- grep("acc", colnames(wbdat))
+wbdatAc <- cbind(wbdat[,ixAcc], user_name = wbdat$user_name, classe = wbdat$classe)
+wbvalAc <- cbind(wbval[,ixAcc], user_name = wbval$user_name, problem_id = wbval$problem_id)
+ixvar <- grep("var", colnames(wbdatAc))
+wbdatAc <- wbdatAc[,-ixvar]
+wbvalAc <- wbvalAc[,-ixvar]
+summary(wbdatAc)
+```
+## 2. exploratory data analysis
+Let's have a look on the variables and their relevance using the 
+
+```{r echo=TRUE}
+library(caret)
+library(ggplot2)
+nearZeroVar(wbdatAc, saveMetrics = TRUE)
+```
+Since the unique percentage of the total_accel... values is below the value of the single accelerometer data we start analyzing based on those predictors.
+
+
+```{r echo=FALSE}
+par(mfrow=c(2,3))
+qplot(accel_dumbbell_x, total_accel_arm, data = wbdatAc, colour=classe)
+qplot(accel_dumbbell_x, total_accel_forearm, data = wbdatAc, colour=classe)
+qplot(accel_dumbbell_x, total_accel_belt, data = wbdatAc, colour=classe)
+qplot(total_accel_arm, total_accel_forearm, data = wbdatAc, colour=classe)
+qplot(total_accel_arm, total_accel_belt, data = wbdatAc, colour=classe)
+qplot(total_accel_forearm, total_accel_belt, data = wbdatAc, colour=classe)
+```
+As result we can observe clear patterns that we try to exploit in the next steps.
+
+## 3. predictor- and model selection
+We will split the data into a training and a test set
+
+```{r}
+inTrain <- createDataPartition(y=wbdatAc$classe, p = 0.7, list = FALSE)
+wbtrain <- wbdatAc[inTrain, ]
+wbtest <- wbdatAc[-inTrain, ]
+```
+
+Now we start applying the models comparing the accuracy of each model
+1. Linear discriminant analysis
+```{r echo=TRUE}
+
+control <- trainControl(method="cv", number=3)
+m0 <- train(classe~., data = wbtrain, method = "lda", trainControl = control) 
+pred1 <- predict(m0, wbtest)
+confusionMatrix(pred1, wbtest$classe)$overall[1]
+```
+2. K nearest neighbour
+```{r echo=TRUE}
+m01 <- train(classe~., data=wbtrain, method = "knn")
+pred01 <- predict(m01, wbtest)
+confusionMatrix(pred01, wbtest$classe)$overall[1]
+```
+3. Random Forest
+```{r echo = TRUE}
+library(randomForest)
+m3 <- randomForest(classe~., data=wbtrain)
+pred3 <- predict(m3, wbtest)
+confusionMatrix(pred3, wbtest$classe)$overall[1]
+```
+The complete confusion matrix is:
+```{r}
+confusionMatrix(pred3, wbtest$classe)
+```
+
+We will select the random forest model for the further predictions.
+
+## 4. Apply to validation/"Quizz" set
+```{r}
+predval <- predict(m3, wbvalAc)
+data.frame(wbvalAc$problem_id, predval)
+```
